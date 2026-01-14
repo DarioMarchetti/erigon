@@ -36,7 +36,6 @@ import (
 	"github.com/erigontech/erigon/execution/tests/blockgen"
 	"github.com/erigontech/erigon/execution/tests/mock"
 	"github.com/erigontech/erigon/execution/types"
-	"github.com/erigontech/erigon/node/ethconfig"
 	"github.com/erigontech/erigon/node/gointerfaces/sentryproto"
 	"github.com/erigontech/erigon/node/gointerfaces/txpoolproto"
 	"github.com/erigontech/erigon/p2p/protocols/eth"
@@ -98,7 +97,6 @@ func TestSendRawTransaction(t *testing.T) {
 	}
 
 	mockSentry, require := mock.MockWithTxPool(t), require.New(t)
-	logger := log.New()
 
 	oneBlockStep(mockSentry, require, t)
 
@@ -109,7 +107,7 @@ func TestSendRawTransaction(t *testing.T) {
 	ctx, conn := rpcdaemontest.CreateTestGrpcConn(t, mockSentry)
 	txPool := txpoolproto.NewTxpoolClient(conn)
 	ff := rpchelper.New(ctx, rpchelper.DefaultFiltersConfig, nil, txPool, txpoolproto.NewMiningClient(conn), func() {}, mockSentry.Log)
-	api := NewEthAPI(newBaseApiForTest(mockSentry), mockSentry.DB, nil, txPool, nil, 5000000, ethconfig.Defaults.RPCTxFeeCap, 100_000, false, 100_000, 128, logger)
+	api := newEthApiForTest(newBaseApiForTest(mockSentry), mockSentry.DB, txPool, nil)
 
 	buf := bytes.NewBuffer(nil)
 	err = txn.MarshalBinary(buf)
@@ -150,7 +148,6 @@ func TestSendRawTransactionUnprotected(t *testing.T) {
 	}
 
 	mockSentry, require := mock.MockWithTxPool(t), require.New(t)
-	logger := log.New()
 
 	oneBlockStep(mockSentry, require, t)
 
@@ -165,9 +162,9 @@ func TestSendRawTransactionUnprotected(t *testing.T) {
 	ctx, conn := rpcdaemontest.CreateTestGrpcConn(t, mockSentry)
 	txPool := txpoolproto.NewTxpoolClient(conn)
 	ff := rpchelper.New(ctx, rpchelper.DefaultFiltersConfig, nil, txPool, txpoolproto.NewMiningClient(conn), func() {}, mockSentry.Log)
-	api := NewEthAPI(newBaseApiForTest(mockSentry), mockSentry.DB, nil, txPool, nil, 5000000, ethconfig.Defaults.RPCTxFeeCap, 100_000, false, 100_000, 128, logger)
+	api := newEthApiForTest(newBaseApiForTest(mockSentry), mockSentry.DB, txPool, nil)
 
-	// Enable unproteced txs flag
+	// Enable unprotected txs flag
 	api.AllowUnprotectedTxs = true
 
 	buf := bytes.NewBuffer(nil)

@@ -831,18 +831,23 @@ func New(ctx context.Context, stack *node.Node, config *ethconfig.Config, logger
 			httpRpcCfg.Dirs,
 			backend.polygonBridge,
 		)
+		ethApiConfig := &jsonrpc.EthApiConfig{
+			GasCap:                      httpRpcCfg.Gascap,
+			FeeCap:                      httpRpcCfg.Feecap,
+			ReturnDataLimit:             httpRpcCfg.ReturnDataLimit,
+			AllowUnprotectedTxs:         httpRpcCfg.AllowUnprotectedTxs,
+			MaxGetProofRewindBlockCount: httpRpcCfg.MaxGetProofRewindBlockCount,
+			SubscribeLogsChannelSize:    httpRpcCfg.WebsocketSubscribeLogsChannelSize,
+			RpcTxSyncDefaultTimeout:     httpRpcCfg.RpcTxSyncDefaultTimeout,
+			RpcTxSyncMaxTimeout:         httpRpcCfg.RpcTxSyncMaxTimeout,
+		}
 		ethApi := jsonrpc.NewEthAPI(
 			baseApi,
 			backend.chainDB,
 			backend.ethRpcClient,
 			backend.txPoolRpcClient,
 			backend.miningRpcClient,
-			httpRpcCfg.Gascap,
-			httpRpcCfg.Feecap,
-			httpRpcCfg.ReturnDataLimit,
-			httpRpcCfg.AllowUnprotectedTxs,
-			httpRpcCfg.MaxGetProofRewindBlockCount,
-			httpRpcCfg.WebsocketSubscribeLogsChannelSize,
+			ethApiConfig,
 			logger,
 		)
 		contractBackend := contracts.NewDirectBackend(ethApi)
