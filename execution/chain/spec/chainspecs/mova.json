@@ -1,0 +1,15 @@
+{
+  "chainName": "mova",
+  "chainId": 61900,
+  "consensus": "ethash",
+  "homesteadBlock": 0,
+  "daoForkBlock": 0,
+  "eip150Block": 0,
+  "eip155Block": 0,
+  "byzantiumBlock": 0,
+  "constantinopleBlock": 0,
+  "petersburgBlock": 0,
+  "istanbulBlock": 0,
+  "ethash": {},
+  "defaultBlockGasLimit": 60000000
+}

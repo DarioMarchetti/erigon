@@ -61,6 +61,7 @@ var (
 	hoodiChainConfig   = ReadChainConfig(chainspecs, "chainspecs/hoodi.json")
 	gnosisChainConfig  = ReadChainConfig(chainspecs, "chainspecs/gnosis.json")
 	chiadoChainConfig  = ReadChainConfig(chainspecs, "chainspecs/chiado.json")
+	movaChainConfig    = ReadChainConfig(chainspecs, "chainspecs/mova.json")
 )
 
 // MainnetGenesisBlock returns the Ethereum main net genesis block.
@@ -141,5 +142,17 @@ func DeveloperGenesisBlock(period uint64, faucet common.Address) *types.Genesis 
 		GasLimit:   11500000,
 		Difficulty: big.NewInt(1),
 		Alloc:      ReadPrealloc(allocs, "allocs/dev.json"),
+	}
+}
+
+// MovaGenesisBlock returns the Ethereum main net genesis block.
+func MovaGenesisBlock() *types.Genesis {
+	return &types.Genesis{
+		Config:     movaChainConfig,
+		Nonce:      0,
+		ExtraData:  []byte{},
+		GasLimit:   60000000,
+		Difficulty: big.NewInt(0),
+		Alloc:      ReadPrealloc(allocs, "allocs/mainnet.json"),
 	}
 }

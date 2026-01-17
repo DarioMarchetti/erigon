@@ -41,6 +41,7 @@ func init() {
 	RegisterChainSpec(networkname.Gnosis, Gnosis)
 	RegisterChainSpec(networkname.Chiado, Chiado)
 	RegisterChainSpec(networkname.Test, Test)
+	RegisterChainSpec(networkname.Test, Mova)
 
 	// verify registered chains
 	for _, spec := range registeredChainsByName {
@@ -151,6 +152,12 @@ var ( // listings filled by init()
 )
 
 var (
+	Mova = Spec{
+		Name:        "mova",
+		GenesisHash: common.HexToHash("0xb99866dbaf214943b104a957eeb239cc3639fba986d30f6de9af39b3e92260bb"),
+		Config:      ReadChainConfig(chainspecs, "chainspecs/mova.json"),
+		Genesis:     MovaGenesisBlock(),
+	}
 	Mainnet = Spec{
 		Name:        networkname.Mainnet,
 		GenesisHash: common.HexToHash("0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3"),
