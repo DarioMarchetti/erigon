@@ -12,6 +12,7 @@ import (
 	"github.com/erigontech/erigon/cmd/utils"
 	"github.com/erigontech/erigon/common"
 	"github.com/erigontech/erigon/common/log/v3"
+	"github.com/erigontech/erigon/db/config3"
 	"github.com/erigontech/erigon/db/datadir"
 	"github.com/erigontech/erigon/db/kv"
 	"github.com/erigontech/erigon/db/kv/dbcfg"
@@ -58,6 +59,8 @@ var (
 			&utils.DbPageSizeFlag,
 			&utils.DbSizeLimitFlag,
 			&utils.ChainFlag,
+			&utils.ErigonDBStepSizeFlag,
+			&utils.ErigonDBStepsInFrozenFileFlag,
 		},
 		Action: func(c *cli.Context) error {
 			return run(c)
@@ -207,7 +210,7 @@ func initGenesis(cliCtx *cli.Context, gen *types.Genesis) error {
 	dirs := datadir.New(cliCtx.String(utils.DataDirFlag.Name))
 
 	// Call our custom genesis commit that stores state
-	_, block, err := commitGenesisBlockWithState(chaindb, gen, dirs, logger)
+	_, block, err := commitGenesisBlockWithState(cliCtx, chaindb, gen, dirs, logger)
 	if err != nil {
 		return fmt.Errorf("commit genesis block: %w", err)
 	}
@@ -231,27 +234,45 @@ func initGenesis(cliCtx *cli.Context, gen *types.Genesis) error {
 // commitGenesisBlockWithState writes the genesis block and properly persists the state to the database.
 // Unlike the standard genesiswrite.CommitGenesisBlock which uses NoopWriter,
 // this implementation actually stores account balances and state to the domains.
-func commitGenesisBlockWithState(db kv.RwDB, genesis *types.Genesis, dirs datadir.Dirs, logger log.Logger) (*chain.Config, *types.Block, error) {
+func commitGenesisBlockWithState(cliCtx *cli.Context, db kv.RwDB, genesis *types.Genesis, dirs datadir.Dirs, logger log.Logger) (*chain.Config, *types.Block, error) {
 	ctx := context.Background()
 
+	// Ensure snapshots dir exists; GetStateIndicesSalt may need it.
+	if err := os.MkdirAll(dirs.Snap, 0o755); err != nil {
+		return nil, nil, fmt.Errorf("create snapshots dir %s: %w", dirs.Snap, err)
+	}
+
+	// ErigonDB geometry must never be 0, otherwise state history/ii will panic with
+	// `assert: empty stepSize`.
+	stepSize := cliCtx.Uint64(utils.ErigonDBStepSizeFlag.Name)
+	stepsInFrozen := cliCtx.Uint64(utils.ErigonDBStepsInFrozenFileFlag.Name)
+	if stepSize == 0 {
+		logger.Warn("Invalid step size override (0). Falling back to default", "default", config3.DefaultStepSize)
+		stepSize = config3.DefaultStepSize
+	}
+	if stepsInFrozen == 0 {
+		logger.Warn("Invalid steps-in-frozen-file override (0). Falling back to default", "default", config3.DefaultStepsInFrozenFile)
+		stepsInFrozen = config3.DefaultStepsInFrozenFile
+	}
+	if stepSize == 0 || stepsInFrozen == 0 {
+		return nil, nil, fmt.Errorf("invalid ErigonDB geometry: stepSize=%d stepsInFrozenFile=%d", stepSize, stepsInFrozen)
+	}
+
 	// Create aggregator for state management
-	logger.Info("Opening aggregator for state management...")
-	agg, err := state.New(dirs).Logger(logger).Open(ctx, db)
+	logger.Info("Opening aggregator for state management...", "stepSize", stepSize, "stepsInFrozenFile", stepsInFrozen)
+	agg, err := state.New(dirs).
+		Logger(logger).
+		// movasync is often running on a fresh datadir; generate salt if missing.
+		GenSaltIfNeed(true).
+		StepSize(stepSize).
+		StepsInFrozenFile(stepsInFrozen).
+		Open(ctx, db)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to open aggregator: %w", err)
 	}
 	defer agg.Close()
 
-	// On a fresh datadir, snapshots/salt-state.txt won't exist yet.
-	// agg.OpenFolder() hard-requires it (reloadSalt -> GetStateIndicesSalt(genNew=false)).
-	// Generate it if needed.
-	if err := os.MkdirAll(dirs.Snap, 0o755); err != nil {
-		return nil, nil, fmt.Errorf("create snapshots dir %s: %w", dirs.Snap, err)
-	}
-	if _, err := state.GetStateIndicesSalt(dirs, true, logger); err != nil {
-		return nil, nil, fmt.Errorf("init state salt: %w", err)
-	}
-
+	// Re-open folder after aggregator creation.
 	if err := agg.OpenFolder(); err != nil {
 		return nil, nil, fmt.Errorf("failed to open aggregator folder: %w", err)
 	}
