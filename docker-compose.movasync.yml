@@ -1,0 +1,30 @@
+version: '2.2'
+
+services:
+  movasync:
+    build:
+      context: .
+      dockerfile: cmd/movasync/Dockerfile
+      args:
+        UID: ${DOCKER_UID:-1000}
+        GID: ${DOCKER_GID:-1000}
+    image: movaerigon/movasync:${TAG:-local}
+
+    # movasync writes to datadir, so mount a persistent volume.
+    volumes:
+      - ./data:/data
+      # Provide your own genesis.json, or use the repo one by default.
+      - ./cmd/movasync/genesis.json:/config/genesis.json:ro
+
+    # Keep flags explicit and injectable.
+    # IMPORTANT: pass non-zero ErigonDB geometry to avoid `panic: assert: empty stepSize`.
+    command: >-
+      --datadir=/data
+      --genesis=/config/genesis.json
+      --rpc=${MOVASYNC_RPC:-https://rpc.movachain.com}
+      --block=${MOVASYNC_BLOCK:-1}
+      --erigondb.override.stepsize=${ERIGONDB_STEPSIZE:-1562500}
+      --erigondb.override.stepsinfrozenfile=${ERIGONDB_STEPSINFROZENFILE:-64}
+
+    restart: "no"
+

@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1
+
+# Multi-stage build to produce a lightweight runtime image for cmd/movasync.
+# Build:
+#   docker build -f cmd/movasync/Dockerfile -t movasync:local .
+
+ARG GO_VERSION=1.25
+ARG BUILDER_IMAGE=golang:${GO_VERSION}-trixie
+ARG RUNTIME_IMAGE=debian:13-slim
+
+FROM ${BUILDER_IMAGE} AS builder
+
+WORKDIR /src
+
+# Cache deps
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source
+COPY . .
+
+# Build movasync
+# CGO is enabled because Erigon uses mdbx and other CGO deps.
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=1 go build -trimpath -o /out/movasync ./cmd/movasync
+
+
+FROM ${RUNTIME_IMAGE} AS runtime
+
+# ca-certs for HTTPS RPC
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# Run as non-root for safer volume permissions (can be overridden by compose `user:`)
+ARG UID=1000
+ARG GID=1000
+RUN groupadd --gid ${GID} mova && useradd --uid ${UID} --gid ${GID} --create-home --shell /bin/bash mova
+
+COPY --from=builder /out/movasync /usr/local/bin/movasync
+
+USER mova
+WORKDIR /home/mova
+
+ENTRYPOINT ["/usr/local/bin/movasync"]
+
