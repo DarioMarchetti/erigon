@@ -85,7 +85,10 @@ func convertEthToLocalBlock(raw json.RawMessage) (*types.Block, error) {
 	// Fill the sender cache of transactions in the block.
 	txs := make([]types.Transaction, len(body.Transactions))
 	for i, tx := range body.Transactions {
-		txs[i] = *tx.tx
+		if tx.tx != nil {
+			txs[i] = *tx.tx
+		}
+
 	}
 	blk := types.NewBlockFromStorage(head.Hash(), head, txs, nil, nil, nil)
 	return blk, nil
