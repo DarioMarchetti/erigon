@@ -4,7 +4,7 @@ services:
   movasync:
     build:
       context: .
-      dockerfile: cmd/movasync/Dockerfile
+      dockerfile: Dockerfile.movasync
       args:
         UID: ${DOCKER_UID:-1000}
         GID: ${DOCKER_GID:-1000}
@@ -13,18 +13,29 @@ services:
     # movasync writes to datadir, so mount a persistent volume.
     volumes:
       - ./data:/data
-      # Provide your own genesis.json, or use the repo one by default.
+      # Provide your own mova genesis.json from host.
       - ./cmd/movasync/genesis.json:/config/genesis.json:ro
+
+    # Expose RPC so you can query while movasync is syncing.
+    ports:
+      - "8545:8545"   # HTTP JSON-RPC
 
     # Keep flags explicit and injectable.
     # IMPORTANT: pass non-zero ErigonDB geometry to avoid `panic: assert: empty stepSize`.
     command: >-
+      /usr/local/bin/movasync
       --datadir=/data
       --genesis=/config/genesis.json
-      --rpc=${MOVASYNC_RPC:-https://rpc.movachain.com}
+      --rpc=${MOVASYNC_SOURCE_RPC:-https://rpc.movachain.com}
       --block=${MOVASYNC_BLOCK:-1}
-      --erigondb.override.stepsize=${ERIGONDB_STEPSIZE:-1562500}
-      --erigondb.override.stepsinfrozenfile=${ERIGONDB_STEPSINFROZENFILE:-64}
+      --erigon.db.pagesize=${ERIGON_DB_PAGESIZE:-4096}
+      --erigon.db.sizelimit=${ERIGON_DB_SIZELIMIT:-10737418240}
+      --chain=${MOVASYNC_CHAIN:-mova}
+      --erigon.db.stepsize=${ERIGONDB_STEPSIZE:-1562500}
+      --erigon.db.stepsinfrozenfile=${ERIGONDB_STEPSINFROZENFILE:-64}
+      --http.enabled=${HTTP_ENABLED:-true}
+      --http.addr=0.0.0.0
+      --http.port=${HTTP_PORT:-8545}
+      --http.api=${HTTP_API:-eth,erigon}
 
     restart: "no"
-

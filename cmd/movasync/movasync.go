@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"net/http"
 	"os"
 	"sort"
 
@@ -28,6 +29,8 @@ import (
 	"github.com/erigontech/erigon/execution/types/accounts"
 	"github.com/erigontech/erigon/node"
 	"github.com/erigontech/erigon/node/debug"
+	"github.com/erigontech/erigon/node/nodecfg"
+	"github.com/erigontech/erigon/rpc"
 	"github.com/holiman/uint256"
 	"github.com/urfave/cli/v2"
 )
@@ -48,9 +51,30 @@ var (
 		Usage: "Block number to start replay",
 		Value: 1,
 	}
+	// Basic HTTP-RPC flags (subset of Erigon/rpcdaemon flags)
+	httpEnabledFlag = cli.BoolFlag{
+		Name:  "http.enabled",
+		Usage: "Enable HTTP JSON-RPC server bound to movasync DB",
+		Value: true,
+	}
+	httpAddrFlag = cli.StringFlag{
+		Name:  "http.addr",
+		Usage: "HTTP server listening interface",
+		Value: nodecfg.DefaultHTTPHost,
+	}
+	httpPortFlag = cli.IntFlag{
+		Name:  "http.port",
+		Usage: "HTTP server listening port",
+		Value: nodecfg.DefaultHTTPPort,
+	}
+	httpAPIFlag = cli.StringFlag{
+		Name:  "http.api",
+		Usage: "Comma separated list of APIs to enable: eth,erigon,web3,net,debug,trace,txpool,db",
+		Value: "eth,erigon",
+	}
 	app = cli.App{
 		Name:  "movasync",
-		Usage: "Replays a block range from a network on a local Erigon instance",
+		Usage: "Replays a block range from a network on a local Erigon instance and optionally exposes HTTP JSON-RPC",
 		Flags: []cli.Flag{
 			&genesisFlag,
 			&rpcFlag,
@@ -61,6 +85,10 @@ var (
 			&utils.ChainFlag,
 			&utils.ErigonDBStepSizeFlag,
 			&utils.ErigonDBStepsInFrozenFileFlag,
+			&httpEnabledFlag,
+			&httpAddrFlag,
+			&httpPortFlag,
+			&httpAPIFlag,
 		},
 		Action: func(c *cli.Context) error {
 			return run(c)
@@ -166,15 +194,51 @@ func run(c *cli.Context) error {
 	}
 	log.Info("genesis loaded", "chainId", ethGenesis.Config.ChainID.String(), "alloc_accounts", len(ethGenesis.Alloc))
 
-	// Verify genesis accounts before starting block sync
-	//if err := verifyGenesisAccounts(c, ethGenesis); err != nil {
-	//	return fmt.Errorf("failed to verify genesis accounts: %w", err)
-	//}
+	// Start lightweight HTTP JSON-RPC server bound to movasync node DB so we can
+	// query while importChain is running. This uses the node's internal
+	// rpcstack, not a separate rpcdaemon process.
+	if c.Bool(httpEnabledFlag.Name) {
+		if err := startMovasyncHTTP(c); err != nil {
+			log.Warn("Failed to start HTTP-RPC server", "err", err)
+		} else {
+			log.Info("HTTP-RPC server started",
+				"addr", c.String(httpAddrFlag.Name),
+				"port", c.Int(httpPortFlag.Name),
+				"api", c.String(httpAPIFlag.Name))
+		}
+	}
 
 	if err := importChain(c, rpcUrl, int64(blockNum-1)); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+// startMovasyncHTTP configures and starts a minimal HTTP JSON-RPC stack
+// bound to the movasync process. Right now it only exposes meta "rpc" API,
+// which is enough for basic health checks; extending with full eth backend
+// would require wiring movasync through eth.Ethereum like cmd/erigon.
+func startMovasyncHTTP(c *cli.Context) error {
+	logger := log.New()
+
+	// Build a bare Server instance; movasync does not yet register chain
+	// backends as RPC services, so only the default "rpc" module is exposed.
+	// Batch/streaming configuration can be refined later or exposed as flags.
+	srv := rpc.NewServer(2 /* batchConcurrency */, false /* traceRequests */, false /* debugSingleRequest */, false /* disableStreaming */, logger, 0)
+
+	httpAddr := c.String(httpAddrFlag.Name)
+	httpPort := c.Int(httpPortFlag.Name)
+
+	http.Handle("/", srv)
+
+	go func() {
+		if err := http.ListenAndServe(fmt.Sprintf("%s:%d", httpAddr, httpPort), nil); err != nil {
+			logger.Error("HTTP-RPC server exited", "err", err)
+		}
+	}()
+
+	logger.Info("movasync HTTP-RPC listening", "addr", httpAddr, "port", httpPort)
 	return nil
 }
 
