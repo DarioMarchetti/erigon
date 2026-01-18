@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/holiman/uint256"
 	"math/big"
 
 	"github.com/erigontech/erigon/common"
@@ -44,20 +45,71 @@ import (
 )
 
 type rpcTransaction struct {
-	tx *types.Transaction
-	txExtraInfo
+	BlockHash        string `json:"blockHash"`
+	BlockNumber      string `json:"blockNumber"`
+	From             string `json:"from"`
+	Gas              string `json:"gas"`
+	GasPrice         string `json:"gasPrice"`
+	Hash             string `json:"hash"`
+	Input            string `json:"input"`
+	Nonce            string `json:"nonce"`
+	To               string `json:"to"`
+	TransactionIndex string `json:"transactionIndex"`
+	Value            string `json:"value"`
+	V                string `json:"v"`
+	R                string `json:"r"`
+	S                string `json:"s"`
 }
 
-type txExtraInfo struct {
-	BlockNumber *string         `json:"blockNumber,omitempty"`
-	BlockHash   *common.Hash    `json:"blockHash,omitempty"`
-	From        *common.Address `json:"from,omitempty"`
-}
 type rpcBlock struct {
 	Hash         *common.Hash        `json:"hash"`
 	Transactions []rpcTransaction    `json:"transactions"`
 	UncleHashes  []common.Hash       `json:"uncles"`
 	Withdrawals  []*types.Withdrawal `json:"withdrawals,omitempty"`
+}
+
+func rpcTxToLocalTx(rpcTx rpcTransaction) (types.Transaction, error) {
+	toAddr := common.Address{}
+	if rpcTx.To != "" {
+		toAddr = common.HexToAddress(rpcTx.To)
+	}
+	value := new(big.Int)
+	value.SetString(rpcTx.Value[2:], 16)
+	nValue, _ := uint256.FromBig(value)
+
+	gasLimit := new(big.Int)
+	gasLimit.SetString(rpcTx.Gas[2:], 16)
+	gasPrice := new(big.Int)
+	gasPrice.SetString(rpcTx.GasPrice[2:], 16)
+	nGasPrice, _ := uint256.FromBig(gasPrice)
+	nonce := new(big.Int)
+	nonce.SetString(rpcTx.Nonce[2:], 16)
+	v := new(big.Int)
+	v.SetString(rpcTx.V[2:], 16)
+	nv, _ := uint256.FromBig(v)
+
+	r := new(big.Int)
+	r.SetString(rpcTx.R[2:], 16)
+	nr, _ := uint256.FromBig(r)
+
+	s := new(big.Int)
+	s.SetString(rpcTx.S[2:], 16)
+	ns, _ := uint256.FromBig(s)
+
+	ntx := &types.LegacyTx{
+		CommonTx: types.CommonTx{
+			Nonce:    nonce.Uint64(),
+			GasLimit: gasLimit.Uint64(),
+			To:       &toAddr,
+			Value:    nValue,
+			Data:     common.FromHex(rpcTx.Input),
+			R:        *nr,
+			S:        *ns,
+			V:        *nv,
+		},
+		GasPrice: nGasPrice,
+	}
+	return ntx, nil
 }
 
 func convertEthToLocalBlock(raw json.RawMessage) (*types.Block, error) {
@@ -85,10 +137,11 @@ func convertEthToLocalBlock(raw json.RawMessage) (*types.Block, error) {
 	// Fill the sender cache of transactions in the block.
 	txs := make([]types.Transaction, len(body.Transactions))
 	for i, tx := range body.Transactions {
-		if tx.tx != nil {
-			txs[i] = *tx.tx
+		localTx, err := rpcTxToLocalTx(tx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert rpc tx to local tx: %w", err)
 		}
-
+		txs[i] = localTx
 	}
 	blk := types.NewBlockFromStorage(head.Hash(), head, txs, nil, nil, nil)
 	return blk, nil
